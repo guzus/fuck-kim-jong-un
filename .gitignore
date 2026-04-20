@@ -1,0 +1,11 @@
+.DS_Store
+/cache/
+/out/
+/broadcast/
+
+# Local Netlify folder
+.netlify
+.env
+
+# Foundry deploy logs
+/.deploy/
