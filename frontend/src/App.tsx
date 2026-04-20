@@ -1,3 +1,5 @@
+import { ExternalLink } from "lucide-react";
+
 import { ActionCard } from "@/components/action-card";
 import { ConnectWallet } from "@/components/connect-wallet";
 import { GlobalStats } from "@/components/global-stats";
@@ -7,25 +9,68 @@ import { Toaster } from "@/components/ui/sonner";
 import { Providers } from "@/providers";
 import { KIM_JONG_UN_ADDRESS } from "@/lib/contract";
 
+const REPO_URL = "https://github.com/guzus/fuck-kim-jong-un";
+
+function GithubIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" className={className} aria-hidden="true" fill="currentColor">
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+      />
+    </svg>
+  );
+}
+
+function TopBar() {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+      <a
+        href={REPO_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-2 hover:text-foreground transition-colors"
+      >
+        <GithubIcon className="size-4" />
+        <span className="font-mono">guzus/fuck-kim-jong-un</span>
+      </a>
+      <a
+        href={`https://etherscan.io/address/${KIM_JONG_UN_ADDRESS}`}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-2 hover:text-foreground transition-colors"
+      >
+        <span className="hidden sm:inline text-[10px] uppercase tracking-widest">Contract</span>
+        <span className="font-mono">{KIM_JONG_UN_ADDRESS}</span>
+        <ExternalLink className="size-3" />
+      </a>
+    </div>
+  );
+}
+
 function App() {
   return (
     <Providers>
       <main className="min-h-svh w-full bg-background text-foreground">
-        <div className="mx-auto w-full max-w-4xl px-6 py-10 sm:py-16 flex flex-col gap-8">
+        <div className="mx-auto w-full max-w-4xl px-6 py-6 sm:py-10 flex flex-col gap-8">
+          <TopBar />
           <header className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-            <div className="flex flex-col gap-2">
-              <h1 className="font-heading text-3xl sm:text-4xl font-semibold tracking-tight">
+            <div className="flex flex-col gap-3">
+              <h1 className="font-heading text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.05]">
                 <span className="text-red-600 dark:text-red-500">DPRK</span>
                 <span className="text-muted-foreground">.</span>
                 <span className="text-blue-600 dark:text-blue-500">FUN</span>
-                <span className="text-muted-foreground">:</span> Lazarus Checker
+                <span className="block text-foreground text-3xl sm:text-4xl lg:text-5xl font-semibold mt-1">
+                  Lazarus Checker
+                </span>
               </h1>
-              <p className="text-muted-foreground max-w-xl text-sm sm:text-base">
+              <p className="text-muted-foreground max-w-xl text-base sm:text-lg">
                 Publicly declare that you are not a North Korean hacker by calling{" "}
-                <code className="font-mono text-xs">pig()</code> and{" "}
-                <code className="font-mono text-xs">fuck()</code> on the on-chain registry.
+                <code className="font-mono text-sm">pig()</code> and{" "}
+                <code className="font-mono text-sm">fuck()</code> on the on-chain registry.
                 Both calls qualify you for the{" "}
-                <code className="font-mono text-xs">hasPiggedAndFuckedKimJongUn</code> gate used
+                <code className="font-mono text-sm">hasPiggedAndFuckedKimJongUn</code> gate used
                 by the Uniswap v4 eligibility hook.
               </p>
             </div>
