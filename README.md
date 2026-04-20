@@ -6,6 +6,10 @@ This repo contains:
 - `KimJongUnEligibilityHook`: an example Uniswap v4 gate hook that only allows trading and LP actions for addresses that have done both
 - `frontend/`: **DPRK.FUN: Lazarus Checker** — a Vite + React + wagmi/viem dapp that lets users call `pig()` / `fuck()` and watch the global stats. Global counters are served from a Netlify Function (`/api/stats`) cached on the durable edge for 15s, so every visitor shares one RPC hit. Live at [dprk.fun](https://dprk.fun). See [`frontend/README.md`](./frontend/README.md).
 
+[![DPRK.FUN: Lazarus Checker — action card preview](docs/action-card.png)](https://dprk.fun)
+
+<sub>The click surface: press `pig()` or `fuck()` to sign a transaction that stamps you as `isRegardedAsNotNorthKoreanHackerActor` on the registry.</sub>
+
 ## Contract behavior
 
 When an address calls either:
