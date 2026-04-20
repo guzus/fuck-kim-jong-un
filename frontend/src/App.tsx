@@ -15,7 +15,10 @@ function App() {
           <header className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div className="flex flex-col gap-2">
               <h1 className="font-heading text-3xl sm:text-4xl font-semibold tracking-tight">
-                <span className="text-muted-foreground">DPRK.FUN:</span> Lazarus Checker
+                <span className="text-red-600 dark:text-red-500">DPRK</span>
+                <span className="text-muted-foreground">.</span>
+                <span className="text-blue-600 dark:text-blue-500">FUN</span>
+                <span className="text-muted-foreground">:</span> Lazarus Checker
               </h1>
               <p className="text-muted-foreground max-w-xl text-sm sm:text-base">
                 Publicly declare that you are not a North Korean hacker by calling{" "}
