@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { isAddress, getAddress, type Address } from "viem";
 import { useConnection, useReadContracts } from "wagmi";
 
@@ -22,9 +22,9 @@ export function UserStats() {
   const [input, setInput] = useState("");
   const [target, setTarget] = useState<Address | undefined>(undefined);
 
-  useEffect(() => {
-    if (connected && !target) setTarget(connected);
-  }, [connected, target]);
+  // Pre-fill with the connected wallet once. Adjusting state during render (instead of in an effect)
+  // is React's recommended pattern and behaves the same: it runs before the frame is committed.
+  if (connected && !target) setTarget(connected);
 
   const valid = isAddress(input);
 

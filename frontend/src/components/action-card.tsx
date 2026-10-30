@@ -13,7 +13,7 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { KIM_JONG_UN_ADDRESS, kimJongUnAbi } from "@/lib/contract";
-import { useConnectModal } from "@/lib/connect-modal";
+import { useConnectModal } from "@/lib/connect-modal-context";
 import { EmojiRain, FaceStamp, type ReactionKind } from "@/components/reaction";
 
 type Action = "pig" | "fuck";
@@ -58,6 +58,7 @@ export function ActionCard() {
         description: `${hash.slice(0, 10)}…${hash.slice(-8)}`,
       });
       // Re-trigger rain on confirmation for a celebratory second beat.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- once per confirmed tx (pre-existing behaviour)
       setRainTick(fn);
       queryClient.invalidateQueries();
       reset();

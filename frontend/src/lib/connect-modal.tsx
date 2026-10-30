@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAccountEffect, useConnect, useConnectors } from "wagmi";
 
 import {
@@ -16,22 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-
-type ConnectModalContextValue = {
-  open: boolean;
-  openConnectModal: () => void;
-  closeConnectModal: () => void;
-};
-
-const ConnectModalContext = createContext<ConnectModalContextValue | null>(null);
-
-export function useConnectModal(): ConnectModalContextValue {
-  const ctx = useContext(ConnectModalContext);
-  if (!ctx) {
-    throw new Error("useConnectModal must be used within <ConnectModalProvider>");
-  }
-  return ctx;
-}
+import { ConnectModalContext } from "@/lib/connect-modal-context";
 
 export function ConnectModalProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -71,11 +48,9 @@ function ConnectDialog({
     },
   });
 
+  // Clear a stale error when the dialog closes. pendingId needs no reset: it only counts while isPending.
   useEffect(() => {
-    if (!open) {
-      reset();
-      setPendingId(null);
-    }
+    if (!open) reset();
   }, [open, reset]);
 
   const visible = connectors.filter((c) => c.id !== "injected" || connectors.length === 1);
@@ -96,7 +71,7 @@ function ConnectDialog({
             <EmptyState />
           ) : (
             visible.map((c) => {
-              const busy = pendingId === c.id;
+              const busy = isPending && pendingId === c.id;
               return (
                 <button
                   key={c.uid}

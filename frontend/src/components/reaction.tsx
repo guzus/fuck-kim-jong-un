@@ -46,6 +46,7 @@ export function FaceStamp({ kind }: { kind: ReactionKind | null }) {
   if (!kind) return null;
   return (
     <div
+      // eslint-disable-next-line react-hooks/purity -- fresh key restarts the stamp animation (pre-existing behaviour)
       key={kind + Date.now()}
       className="pointer-events-none absolute left-1/2 top-[58%] z-10 -translate-x-1/2 -translate-y-1/2 animate-kim-face-stamp text-[88px] leading-none drop-shadow-lg"
       aria-hidden
@@ -62,6 +63,7 @@ export function EmojiRain({ kind }: { kind: ReactionKind | null }) {
 
   useEffect(() => {
     if (!kind) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- starts a timed animation (pre-existing behaviour)
     setActive(kind);
     const t = setTimeout(() => setActive(null), 3200);
     return () => clearTimeout(t);

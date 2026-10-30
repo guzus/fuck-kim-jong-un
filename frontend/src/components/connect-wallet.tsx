@@ -3,7 +3,7 @@ import { mainnet } from "wagmi/chains";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useConnectModal } from "@/lib/connect-modal";
+import { useConnectModal } from "@/lib/connect-modal-context";
 
 function shortenAddress(addr: string) {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
