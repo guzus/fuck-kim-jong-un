@@ -41,6 +41,7 @@ import {
 } from "@/lib/launchpad/metadata";
 import { navigate, routes } from "@/lib/router";
 import {
+  CREATE_AND_GRADUATE_GAS,
   DEFAULT_DEADLINE_MINUTES,
   DEFAULT_SLIPPAGE_BPS,
   PriceMovedError,
@@ -210,9 +211,10 @@ export function CreateTokenForm() {
     try {
       // Premise: quotes go stale. Re-quote now and derive min-out from that, not from what's on screen.
       let minTokensOut = 0n;
+      let gas: bigint | undefined;
       if (buyValue > 0n) {
         setBusy("Refreshing quote…");
-        const [fresh] = await readContract(wagmiConfig, {
+        const [fresh, , , freshRefund] = await readContract(wagmiConfig, {
           address: launchpad,
           abi: dprkLaunchpadAbi,
           functionName: "quoteCreateBuy",
@@ -224,6 +226,11 @@ export function CreateTokenForm() {
           throw new PriceMovedError();
         }
         minTokensOut = applySlippage(fresh, slippageBps);
+        // Buying the whole curve graduates it in this transaction. Nobody can trade the new curve first, but
+        // the token's address depends on how many launches land before this one, and anyone can create the
+        // PancakeSwap pair for an address in advance. An estimate taken while such a pair exists is millions
+        // of gas short if another launch lands first and this token gets an address without one.
+        if (freshRefund > 0n || fresh === constants?.curveSupply) gas = CREATE_AND_GRADUATE_GAS;
       }
       const deadline = await submitDeadline(deadlineMinutes);
 
@@ -234,6 +241,7 @@ export function CreateTokenForm() {
         functionName: "createToken",
         args: [name, symbol, metadataJson, minTokensOut, deadline],
         value: buyValue,
+        gas,
         chainId,
         account,
       });

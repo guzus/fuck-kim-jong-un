@@ -17,6 +17,12 @@ export const DEFAULT_DEADLINE_MINUTES = 10;
 export const GRADUATING_BUY_GAS = 4_500_000n;
 
 /**
+ * Gas limit for a createToken whose initial buy takes the whole curve, so it deploys the token and graduates
+ * it in one go: on a BSC mainnet fork that needed a 4.51M limit, 5.28M with the full 1 KB of metadata.
+ */
+export const CREATE_AND_GRADUATE_GAS = 7_000_000n;
+
+/**
  * Deadline for a trade, computed when the user submits (never when the quote was rendered). The contract
  * compares against block.timestamp, so "now" is the later of the local clock and the latest block: a
  * chain that runs ahead of this machine (anvil after evm_increaseTime, a skewed laptop clock) must not
