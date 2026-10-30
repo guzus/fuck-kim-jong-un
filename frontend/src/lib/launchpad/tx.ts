@@ -8,6 +8,15 @@ export const DEFAULT_SLIPPAGE_BPS = 200; // 2%
 export const DEFAULT_DEADLINE_MINUTES = 10;
 
 /**
+ * Gas limit for a buy that may finish the curve (see mayCompleteCurve). Graduation creates the PancakeSwap
+ * pair inside that buy: on a BSC mainnet fork it used 3,562,919 gas and needed a 3.63M limit (about 2.4M with
+ * the local mock factory), against 70-90k for a plain buy. A wallet estimates gas against the latest block,
+ * so a buy estimated while it didn't finish the curve, then mined right behind another buy that left the
+ * curve just short, runs out of gas. BSC charges for the gas used, not the limit, so headroom costs nothing.
+ */
+export const GRADUATING_BUY_GAS = 4_500_000n;
+
+/**
  * Deadline for a trade, computed when the user submits (never when the quote was rendered). The contract
  * compares against block.timestamp, so "now" is the later of the local clock and the latest block: a
  * chain that runs ahead of this machine (anvil after evm_increaseTime, a skewed laptop clock) must not

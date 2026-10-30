@@ -45,6 +45,20 @@ export function progressBps(state: CurveState, curveSupply: bigint): number {
   return Number(bps > BPS ? BPS : bps);
 }
 
+/**
+ * Whether a buy could finish the curve, and so graduate it, by the time it's mined. Trades that land first
+ * can leave the curve anywhere, but a buy that finishes the curve gets exactly the tokens left, so it only
+ * succeeds if at least `minTokensOut` are left. Its cheapest way to finish is when exactly that many are
+ * left, and those last tokens cost k/F − k/(F + minTokensOut) BNB, where F is the virtual token reserve at
+ * sell-out and k = x·y. A buy whose net BNB is below that can't graduate without failing its own min-out.
+ * F is fixed per curve and k never decreases, so a stale `state` only makes this answer yes more often.
+ */
+export function mayCompleteCurve(state: CurveState, netBnbIn: bigint, minTokensOut: bigint): boolean {
+  const finalTokenReserve = state.virtualTokenReserve - state.realTokenReserve;
+  const k = state.virtualBnbReserve * state.virtualTokenReserve;
+  return netBnbIn * finalTokenReserve * (finalTokenReserve + minTokensOut) >= k * minTokensOut;
+}
+
 /** Minimum acceptable output for a quote, rounding down. */
 export function applySlippage(amount: bigint, slippageBps: number): bigint {
   const bps = BigInt(Math.min(Math.max(Math.round(slippageBps), 0), 10_000));

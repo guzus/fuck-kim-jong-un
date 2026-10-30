@@ -14,7 +14,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { dprkLaunchpadAbi, dprkTokenAbi } from "@/lib/abi/launchpad";
 import { explorerUrl, launchpadConfig, pancakeSwapUrl } from "@/lib/launchpad/config";
-import { applySlippage, type TokenInfo } from "@/lib/launchpad/curve";
+import { applySlippage, mayCompleteCurve, type TokenInfo } from "@/lib/launchpad/curve";
 import { describeError } from "@/lib/launchpad/errors";
 import { formatAmount, formatBps, parseAmountInput, toInputString } from "@/lib/launchpad/format";
 import { retryUnlessRevert, useDebounced, useLaunchpadWallet, useTradeGate } from "@/lib/launchpad/hooks";
@@ -22,6 +22,7 @@ import { routes } from "@/lib/router";
 import {
   DEFAULT_DEADLINE_MINUTES,
   DEFAULT_SLIPPAGE_BPS,
+  GRADUATING_BUY_GAS,
   PriceMovedError,
   submitDeadline,
   waitForSuccess,
@@ -149,7 +150,7 @@ export function TradePanel({
   // ------------------------------------------------------------------ actions
   async function onBuy(account: Address) {
     setBusy("Refreshing quote…");
-    const [fresh] = await readContract(wagmiConfig, {
+    const [fresh, freshFee, freshAccepted] = await readContract(wagmiConfig, {
       address: launchpad,
       abi: dprkLaunchpadAbi,
       functionName: "quoteBuy",
@@ -163,6 +164,9 @@ export function TradePanel({
     }
     const minTokensOut = applySlippage(fresh, slippageBps);
     const deadline = await submitDeadline(deadlineMinutes);
+    // A buy that finishes the curve also creates the PancakeSwap pair, and the wallet's estimate can come
+    // from a block where it doesn't (another buy can land first), so set the limit whenever it might.
+    const gas = mayCompleteCurve(info.state, freshAccepted - freshFee, minTokensOut) ? GRADUATING_BUY_GAS : undefined;
 
     setBusy("Simulating…");
     const { request } = await simulateContract(wagmiConfig, {
@@ -171,6 +175,7 @@ export function TradePanel({
       functionName: "buy",
       args: [token, minTokensOut, deadline],
       value: amount,
+      gas,
       chainId,
       account,
     });
