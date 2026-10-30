@@ -5,6 +5,32 @@ libs = ["lib"]
 optimizer = true
 optimizer_runs = 44444444
 via_ir = true
-gas_reports = ["KimJongUn", "KimJongUnEligibilityHook"]
+# Explicit, and equal to forge 1.5's default, so KimJongUn's bytecode is unchanged. BSC mainnet runs Cancun and
+# Prague (Pascal hard fork). solc 0.8.28 emits no post-Cancun opcodes here (PUSH0 and MCOPY are the only
+# post-Paris ones). Pinning keeps a future forge default (e.g. osaka) from silently changing the target.
+evm_version = "prague"
+gas_reports = ["KimJongUn", "KimJongUnEligibilityHook", "DprkPass", "DprkLaunchpad", "DprkToken"]
+# script/DeployDprkFun.s.sol writes deployments/<chainId>.json
+fs_permissions = [{ access = "read-write", path = "./deployments" }]
+
+[profile.default.invariant]
+runs = 96
+depth = 120
+# Handlers skip invalid actions up front, so any revert (e.g. a graduation that can't complete) is a failure.
+fail_on_revert = true
+
+[lint]
+# Lint production code (src/, script/) fully. Launchpad tests and mocks deliberately use unchecked test transfers
+# and WETH9/PancakeSwap-style names.
+ignore = ["test/launchpad/**/*.sol"]
+
+# Longer campaign before a mainnet deploy: FOUNDRY_PROFILE=deep forge test --match-path 'test/launchpad/*'
+[profile.deep.fuzz]
+runs = 10000
+
+[profile.deep.invariant]
+runs = 512
+depth = 250
+fail_on_revert = true
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

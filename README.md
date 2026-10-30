@@ -4,6 +4,7 @@ This repo contains:
 
 - `KimJongUn`: a registry contract that records which addresses have called `pig()` and `fuck()`
 - `KimJongUnEligibilityHook`: an example Uniswap v4 gate hook that only allows trading and LP actions for addresses that have done both
+- `src/launchpad/`: **DPRK.FUN launchpad for BNB Chain**. A soulbound *Not-Lazarus Pass* ("김정은 개새끼" pass) that you can only claim after `pig()` + `fuck()`, plus a pass-gated bonding-curve launchpad that graduates to PancakeSwap V2. See [`docs/BSC_LAUNCHPAD.md`](./docs/BSC_LAUNCHPAD.md). Unaudited.
 - `frontend/`: **DPRK.FUN: Lazarus Checker** — a Vite + React + wagmi/viem dapp that lets users call `pig()` / `fuck()` and watch the global stats. Global counters are served from a Netlify Function (`/api/stats`) cached on the durable edge for 15s, so every visitor shares one RPC hit. Live at [dprk.fun](https://dprk.fun). See [`frontend/README.md`](./frontend/README.md).
 
 [![DPRK.FUN: Lazarus Checker — action card preview](docs/action-card.png)](https://dprk.fun)
@@ -102,6 +103,31 @@ These numbers are end-to-end test scenario costs for the example Uniswap v4 hook
 | Allow trusted forwarder with `hookData = abi.encode(user)` | 330,200 |
 | Reject malformed `hookData` | 72,758 |
 | Reject spoofed user from untrusted forwarder | 261,434 |
+
+## DPRK.FUN launchpad (BNB Chain)
+
+The contracts live in `src/launchpad/`, and the spec plus implementation notes are in
+[`docs/BSC_LAUNCHPAD.md`](./docs/BSC_LAUNCHPAD.md).
+
+| Contract | Role |
+| --- | --- |
+| `DprkPass` | Soulbound ERC-721 + ERC-5192. `claim()` requires `hasPiggedAndFuckedKimJongUn(msg.sender)`, and `tokenURI` is an on-chain SVG. |
+| `DprkLaunchpad` | Pass-gated `createToken`/`buy`. `sell` is always open. Virtual constant-product curves, graduating inline to PancakeSwap V2 with the LP burned. |
+| `DprkToken` | Fixed-supply ERC-20. Before graduation, only the launchpad and pass holders can receive it. |
+
+```sh
+forge test --match-path 'test/launchpad/*'                       # unit, fuzz, invariant (fork test skips)
+BSC_RPC_URL=https://bsc-dataseed.bnbchain.org \
+  forge test --match-path 'test/launchpad/*Fork*' -vv            # real PancakeSwap V2 + WBNB on a mainnet fork
+FOUNDRY_PROFILE=deep forge test --match-path 'test/launchpad/*'  # long fuzz/invariant campaign
+
+anvil   # or: anvil --fork-url https://bsc-dataseed.bnbchain.org
+forge script script/DeployDprkFun.s.sol --rpc-url http://127.0.0.1:8545 --broadcast --private-key <anvil key #0>
+node script/export-abis.mjs                                      # frontend/src/lib/abi/launchpad.ts
+```
+
+`DeployDprkFun` uses the real PancakeSwap V2 factory and WBNB on chains 56 and 97, and deploys mocks on any other
+chain. It writes `deployments/<chainId>.json` and prints the `VITE_*` lines for `frontend/.env.local`.
 
 ## Deploy
 

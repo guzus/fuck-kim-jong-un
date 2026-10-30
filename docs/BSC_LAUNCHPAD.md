@@ -107,6 +107,89 @@ these factories and WBNB. They're used only for the frontend's "Trade on Pancake
 - Writes `deployments/<chainId>.json`:
   `{ chainId, kimJongUn, pass, launchpad, pancakeFactory, wbnb, deployBlock }`.
 - Prints the matching `VITE_*` lines for the frontend.
+- Also accepts `OWNER` (launchpad owner, default: deployer) and `DEPLOYMENTS_FILE`. For a fork rehearsal, use e.g.
+  `DEPLOYMENTS_FILE=deployments/56-fork.json` (gitignored), so fork addresses never land in `deployments/56.json`.
+
+### Implementation notes (as built)
+
+These clarify behaviour the interfaces leave open. None of them change the ABI: `frontend/src/lib/abi/launchpad.ts`
+keeps every interface entry with the same types and mutability, and the implementations only add entries.
+
+**Rounding.** Fees round up: `net = floor(gross * (10_000 - feeBps) / 10_000)`, `fee = gross - net` (that is,
+`fee = ceil(gross * feeBps / 10_000)`). The sell fee uses the same formula on the gross curve output. Curve outputs
+round down. The completing buy pays `grossRequired = ceil(netRequired * 10_000 / (10_000 - feeBps))` with
+`netRequired = ceil(x * y / yEnd) - x`. Under this fee definition, "msg.value buys the whole remainder" is exactly
+"msg.value >= grossRequired". So `acceptedBnbIn <= msg.value` always holds, and a smaller buy can never reach the
+remainder. (With a round-down fee it can: for example, value 150 wei at 1% gives net 149, while the gross needed
+for net 149 is 151.) `k` never decreases.
+
+**`graduationBnb()`** returns `ceil(V0 * y0 / yEnd) - V0`, which is `3 * V0 + 1 wei` for every allowed V0. A real curve
+graduates with at least that. Rounding adds a few wei per trade, so expect about 1 to 30 wei more.
+
+**Bounds.** `1e9 <= initialVirtualBnbReserve <= 1e25` and `feeBps <= 500`, otherwise the constructor reverts
+`InvalidConfiguration()`. The upper bound keeps the PancakeSwap listing price at or above the final curve price
+exactly, even though `y0` is rounded down.
+
+**Post-graduation `TokenState`** is frozen at its final values: `graduated = true`, `pair` set,
+`realTokenReserve = 0`, `realBnbReserve` = the BNB that went into the pool, and the virtual reserves are the final
+curve reserves. So `virtualBnbReserve / virtualTokenReserve` still reads as the listing price, and
+`realBnbReserve / graduationBnb()` reads as about 100% raised. That BNB is no longer held by the launchpad, so the
+solvency invariant sums `realBnbReserve` over curves that haven't graduated.
+
+**Views.**
+- `getTokenState`, `getTokenInfo`, `progressBps`, `quoteBuy`, and `quoteSell` revert `UnknownToken(token)` for a
+  non-launch token. Use `isLaunchToken` to check first.
+- `quoteBuy` and `quoteSell` revert `AlreadyGraduated(token)` once graduated, because there is no curve to quote.
+- Quotes of 0 return all zeros. A buy quote with `tokensOut == 0` (or a sell quote with `bnbOut == 0`) means the
+  trade would revert `DustAmount()`.
+- `quoteSell` returns the net BNB (after fee). `quoteSell` and `sell` revert
+  `InsufficientRealBnbReserve` for amounts larger than all circulating tokens. That's a backstop: no holder can
+  reach it.
+- `tokenAt(i)` out of range panics (0x32). `getTokenInfos` returns an empty array when `offset >= tokenCount()`.
+- `progressBps` rounds down, so it reads 10_000 only after graduation.
+
+**Events.** A completing buy emits `Trade` (with the post-trade, final curve reserves) and then `Graduated`.
+`createToken` emits `TokenCreated` before the `Trade` for its initial buy.
+
+**Admin (Ownable2Step).** `setFeeRecipient(address)` (non-zero) and `setPaused(bool)` are owner-only, along with
+OpenZeppelin's `transferOwnership`/`acceptOwnership`/`renounceOwnership`. The owner can't touch reserves, fees,
+curves, or sells.
+
+**Other behaviour.**
+- The launchpad has no `receive()`, so plain BNB transfers to it revert.
+- Tokens sent directly to the launchpad (instead of `sell`) are ignored by the accounting and can't be recovered.
+- The creator's initial buy can complete and graduate the curve in the same transaction.
+
+**Pass.** Soulbound is enforced at OpenZeppelin's internal hooks, so the ERC-721 ABI is standard. `approve` and
+`setApprovalForAll` always revert `Soulbound()`. Every transfer of an existing pass reverts `Soulbound()`.
+Transfers of ids that don't exist, or to `address(0)`, hit ERC-721's own errors first. `locked(id)` reverts for
+ids that don't exist (ERC-5192). The `tokenURI` image is a 600x800 SVG that uses only system fonts.
+
+**Pre-graduation pair griefing.** Anyone can create the pair, even before the token exists (CREATE addresses are
+predictable), and donate WBNB. The real pair's `sync()` only works once the token has code. A direct `mint`
+credits `balance - reserve`, so donations (synced or not) only raise the listing price. The fork test shows
+`router.addLiquidityETH` reverting on such a pair while the launchpad graduates through it.
+
+**EVM target.** `foundry.toml` pins `evm_version = "prague"`, forge 1.5's default, so KimJongUn's bytecode is
+unchanged. The only post-Paris opcodes in the bytecode are PUSH0 and MCOPY. On 2026-10-30, BSC mainnet executed
+PUSH0, TSTORE, TLOAD, and MCOPY through `eth_call`, and it also has Prague's EIP-2935 history contract and EIP-2537
+precompiles.
+
+**Gas** (receipt `gasUsed`, BSC mainnet fork with real PancakeSwap, 2026-10-30):
+
+| Action | Gas |
+| --- | ---: |
+| `DprkPass.claim()` | 105,523 (122,623 for the very first pass) |
+| `createToken`, no initial buy (short / 1 KB metadata) | 1,029,539 / 1,701,901 |
+| `createToken` with initial buy | ~1,020,000 to 1,090,000 |
+| `buy` (first time / repeat buyer) | 83,564 / 66,464 |
+| `sell` | ~67,000 to 79,000 (plus a one-off `approve`, 46,274) |
+| graduating `buy` (creates the pair / pair pre-created) | 3,562,919 / 365,658 |
+| `claimFees` | ~37,000 to 49,000 |
+| Deploy `DprkPass` / `DprkLaunchpad` | 2,920,294 / 4,090,852 |
+
+Deployed sizes (default profile): `DprkLaunchpad` 18,355 B, `DprkPass` 13,051 B, `DprkToken` 3,533 B, all under
+24,576 B.
 
 ## Frontend (`frontend/`, dprk.fun)
 
@@ -151,7 +234,7 @@ bun install && bun run dev
 ## Mainnet checklist
 
 - [ ] Independent audit of `DprkPass`, `DprkToken`, and `DprkLaunchpad`.
-- [ ] `forge test` including invariant runs, plus the BSC fork test (`BSC_RPC_URL=… forge test --match-path test/launchpad/*Fork*`).
+- [ ] `forge test` including invariant runs (`FOUNDRY_PROFILE=deep` for the long campaign), plus the BSC fork test (`BSC_RPC_URL=… forge test --match-path 'test/launchpad/*Fork*'`).
 - [ ] Testnet (97) dry run of the full flow, including graduation on PancakeSwap testnet.
 - [ ] Multisig as owner and fee recipient. Verify the contracts on BscScan.
 - [ ] Legal review: memecoin launchpad, sanctions/geofencing, terms.
