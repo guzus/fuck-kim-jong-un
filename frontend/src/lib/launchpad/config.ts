@@ -10,9 +10,14 @@ export type LaunchpadChainId = (typeof LAUNCHPAD_CHAIN_IDS)[number];
 /** Anvil's first dev account. Anvil signs eth_sendTransaction for it, which is what the e2e mock wallet relies on. */
 export const ANVIL_ACCOUNT_0: Address = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 
-/** Public RPCs per chain, used for reads when VITE_LAUNCHPAD_RPC_URL is unset. */
+/**
+ * Public RPCs per chain, used for reads when VITE_LAUNCHPAD_RPC_URL is unset (in order, via a fallback
+ * transport). On 56, publicnode goes first because bsc-dataseed rejects eth_getLogs outright (-32005, even
+ * for 1,000 blocks of one address), which cost the recent-trades scan a failed round-trip per chunk;
+ * publicnode serves ranges up to 10k blocks. bsc-dataseed stays as the fallback.
+ */
 const PUBLIC_RPCS: Record<LaunchpadChainId, readonly [string, ...string[]]> = {
-  56: ["https://bsc-dataseed.bnbchain.org", "https://bsc-rpc.publicnode.com"],
+  56: ["https://bsc-rpc.publicnode.com", "https://bsc-dataseed.bnbchain.org"],
   97: ["https://data-seed-prebsc-1-s1.bnbchain.org:8545", "https://bsc-testnet-rpc.publicnode.com"],
   31337: ["http://127.0.0.1:8545"],
 };
