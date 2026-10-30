@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useConnection, useWriteContract, useWaitForTransactionReceipt, useChainId } from "wagmi";
+import { useConnection, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { mainnet } from "wagmi/chains";
 
 import { Button } from "@/components/ui/button";
@@ -35,8 +35,9 @@ const CONFIRM_TOASTS: Record<Action, string> = {
 };
 
 export function ActionCard() {
-  const { address, status } = useConnection();
-  const chainId = useChainId();
+  // The wallet's actual chain. useChainId() is wagmi's *default* chain, which no longer has to be the
+  // wallet's chain now that the config holds BSC too (it ignores chains the config doesn't know).
+  const { address, status, chainId } = useConnection();
   const queryClient = useQueryClient();
   const { openConnectModal } = useConnectModal();
 
@@ -49,7 +50,7 @@ export function ActionCard() {
     isLoading: isConfirming,
     isSuccess: isConfirmed,
     error: receiptError,
-  } = useWaitForTransactionReceipt({ hash });
+  } = useWaitForTransactionReceipt({ hash, chainId: mainnet.id });
 
   useEffect(() => {
     if (isConfirmed && hash && variables?.functionName) {
@@ -100,6 +101,8 @@ export function ActionCard() {
         address: KIM_JONG_UN_ADDRESS,
         abi: kimJongUnAbi,
         functionName: action,
+        // viem asserts the wallet is on mainnet before sending; never pig() a BSC address by accident.
+        chainId: mainnet.id,
       },
       {
         onError: (err) => toast.error(err.message),

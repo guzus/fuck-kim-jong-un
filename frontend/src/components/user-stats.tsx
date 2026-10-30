@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { isAddress, getAddress, type Address } from "viem";
 import { useConnection, useReadContracts } from "wagmi";
+import { mainnet } from "wagmi/chains";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -28,7 +29,8 @@ export function UserStats() {
 
   const valid = isAddress(input);
 
-  const contract = { address: KIM_JONG_UN_ADDRESS, abi: kimJongUnAbi } as const;
+  // Pinned to mainnet: with BSC in the wagmi config, an unpinned read follows the wallet's chain.
+  const contract = { address: KIM_JONG_UN_ADDRESS, abi: kimJongUnAbi, chainId: mainnet.id } as const;
 
   const { data, isLoading, error } = useReadContracts({
     contracts: target

@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ConnectModalContext } from "@/lib/connect-modal-context";
+import { launchpadConfig } from "@/lib/launchpad/config";
 
 export function ConnectModalProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -53,7 +54,9 @@ function ConnectDialog({
     if (!open) reset();
   }, [open, reset]);
 
-  const visible = connectors.filter((c) => c.id !== "injected" || connectors.length === 1);
+  // The e2e mock connector (only present in VITE_E2E_MOCK_WALLET builds) doesn't count as a browser wallet.
+  const browserWallets = connectors.filter((c) => c.type !== "mock");
+  const visible = connectors.filter((c) => c.id !== "injected" || browserWallets.length === 1);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -72,6 +75,8 @@ function ConnectDialog({
           ) : (
             visible.map((c) => {
               const busy = isPending && pendingId === c.id;
+              // `import.meta.env` check keeps this label (and branch) out of normal builds entirely.
+              const isMock = import.meta.env.VITE_E2E_MOCK_WALLET === "1" && c.type === "mock";
               return (
                 <button
                   key={c.uid}
@@ -79,12 +84,15 @@ function ConnectDialog({
                   disabled={isPending}
                   onClick={() => {
                     setPendingId(c.id);
-                    connect({ connector: c });
+                    // The mock wallet starts on the launchpad chain; real wallets stay where they are.
+                    connect(isMock ? { connector: c, chainId: launchpadConfig.chainId } : { connector: c });
                   }}
                   className="group flex items-center gap-3 rounded-lg border border-border bg-background px-3 py-2.5 text-left transition-colors hover:bg-muted disabled:opacity-50 disabled:pointer-events-none"
                 >
                   <WalletIcon connector={c} />
-                  <span className="flex-1 text-sm font-medium">{c.name}</span>
+                  <span className="flex-1 text-sm font-medium">
+                    {isMock ? "E2E mock wallet (anvil #0)" : c.name}
+                  </span>
                   {busy ? (
                     <span className="text-xs text-muted-foreground">Connecting…</span>
                   ) : c.id === "injected" ? (

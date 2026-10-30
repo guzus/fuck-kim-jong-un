@@ -1,6 +1,7 @@
 import type { Address } from "viem";
 
-export const KIM_JONG_UN_ADDRESS = (import.meta.env.VITE_KIM_JONG_UN_ADDRESS ??
+// `||`, not `??`: `cp .env.example .env.local` leaves this set to "", which must still mean "use the default".
+export const KIM_JONG_UN_ADDRESS = (import.meta.env.VITE_KIM_JONG_UN_ADDRESS?.trim() ||
   "0xF9fb0c4652A64C444EB19748935670F18560051A") as Address;
 
 export const kimJongUnAbi = [
