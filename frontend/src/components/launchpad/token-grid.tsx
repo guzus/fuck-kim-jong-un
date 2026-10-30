@@ -111,8 +111,10 @@ function TokenCard({
           <span className="text-muted-foreground">
             {info.state.graduated ? "On PancakeSwap" : progress === undefined ? "…" : `${formatBps(progress)} sold`}
           </span>
+          {/* A graduated curve's reserves are frozen at the PancakeSwap listing (see the token page). */}
           <span className="font-medium tabular-nums">
-            MC {mcap === undefined ? "…" : `${formatAmount(mcap)} ${symbolUnit}`}
+            {info.state.graduated ? "MC at listing" : "MC"}{" "}
+            {mcap === undefined ? "…" : `${formatAmount(mcap)} ${symbolUnit}`}
           </span>
         </div>
       </div>
