@@ -155,14 +155,15 @@ export function PassPanel() {
     return (
       <Card id="pass" data-testid="pass-certified">
         <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center">
+          {/* DprkPass draws a 600x800 poster, so the frame is 3:4. */}
           {passMeta?.image ? (
             <img
               src={passMeta.image}
               alt={`Not-Lazarus Pass #${status.passId?.toString() ?? ""}`}
-              className="size-32 shrink-0 rounded-lg object-contain ring-1 ring-foreground/10"
+              className="h-40 w-30 shrink-0 rounded-lg object-contain ring-1 ring-foreground/10"
             />
           ) : (
-            <Skeleton className="size-32 shrink-0" />
+            <Skeleton className="h-40 w-30 shrink-0" />
           )}
           <div className="flex min-w-0 flex-col gap-1.5">
             <span className="text-[11px] font-semibold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
