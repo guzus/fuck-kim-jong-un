@@ -9,3 +9,6 @@
 
 # Foundry deploy logs
 /.deploy/
+
+# Local-chain deployments
+/deployments/31337.json
