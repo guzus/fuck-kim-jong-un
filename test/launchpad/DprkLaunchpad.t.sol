@@ -493,6 +493,61 @@ contract DprkLaunchpadTest is LaunchpadTestBase {
         launchpad.setPaused(true);
     }
 
+    /// Graduation exists only inside a completing buy, so a pause holds it back. Sells and fee claims keep working.
+    function test_owner_pauseBlocksGraduationButNotSells() public {
+        address token = _create(alice);
+        uint256 bobTokens = _buy(bob, token, 1 ether);
+        uint256 gross = _grossToComplete(token);
+        vm.prank(owner);
+        launchpad.setPaused(true);
+
+        vm.prank(carol);
+        vm.expectRevert(IDprkLaunchpad.LaunchpadPaused.selector);
+        launchpad.buy{value: gross}(token, 0, block.timestamp);
+        assertFalse(_state(token).graduated);
+
+        assertGt(_sell(bob, token, bobTokens / 2), 0);
+        assertGt(launchpad.claimFees(), 0);
+
+        vm.prank(owner);
+        launchpad.setPaused(false);
+        _buy(carol, token, _grossToComplete(token));
+        assertTrue(_state(token).graduated);
+    }
+
+    /// Renouncing while paused would freeze creates, buys and graduations forever, so it reverts. Renouncing while
+    /// unpaused works and leaves a launchpad that nobody can pause.
+    function test_owner_renounceOnlyWhileUnpaused() public {
+        address token = _create(alice);
+        uint256 bobTokens = _buy(bob, token, _grossToComplete(token) - 1); // one wei short of completion
+        assertFalse(_state(token).graduated);
+
+        vm.startPrank(owner);
+        launchpad.setPaused(true);
+        vm.expectRevert(DprkLaunchpad.RenounceWhilePaused.selector);
+        launchpad.renounceOwnership();
+        vm.stopPrank();
+        assertEq(launchpad.owner(), owner);
+
+        vm.prank(mallory);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, mallory));
+        launchpad.renounceOwnership();
+
+        vm.startPrank(owner);
+        launchpad.setPaused(false);
+        launchpad.renounceOwnership();
+        vm.stopPrank();
+        assertEq(launchpad.owner(), address(0));
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, owner));
+        launchpad.setPaused(true);
+
+        // Nobody can pause any more: trading and graduation carry on.
+        assertGt(_sell(bob, token, bobTokens / 2), 0);
+        _buy(carol, token, _grossToComplete(token));
+        assertTrue(_state(token).graduated);
+    }
+
     // ------------------------------------------------------------------------------------------- views
 
     function test_views_unknownToken() public {

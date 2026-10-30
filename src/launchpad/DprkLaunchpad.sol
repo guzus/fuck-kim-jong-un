@@ -28,14 +28,25 @@ import {IPancakeV2Factory, IPancakeV2Pair, IWBNB} from "./interfaces/IPancakeV2.
 /// "net(gross) buys the whole remainder" exactly equivalent to "gross >= grossRequired". So the completing path
 /// never charges more than msg.value, and a non-completing buy can never reach the remainder.
 ///
-/// Graduation happens inline in the completing buy. The launchpad mints the pair directly (never the router).
-/// The token's transfer rule keeps the pair from holding tokens before that, so nobody else can hold LP shares
-/// first. Donated WBNB (synced or not) only raises the listing price.
+/// Graduation happens only inline, in the completing buy, so pausing buys also pauses graduation. Selling is
+/// never paused. The launchpad mints the pair directly (never the router). The token's transfer rule keeps the
+/// pair from holding tokens before that, so nobody else can hold LP shares first. Donated WBNB (synced or not)
+/// only raises the listing price. The LP minted at graduation is sent to 0x...dEaD (burned). That doesn't lock
+/// 100% of the pool forever: when PancakeSwap's `feeTo` is set, the pair later mints protocol-fee LP to it out of
+/// swap-fee growth, and that LP can be withdrawn.
 ///
-/// Post-graduation state is frozen: realTokenReserve = 0, realBnbReserve = the BNB that went into the pool, and
-/// the virtual reserves are the final curve reserves, so `virtualBnbReserve / virtualTokenReserve` reads as the
-/// listing price. That BNB is no longer held here. The solvency invariant is
+/// Post-graduation state is frozen: realTokenReserve = 0, and realBnbReserve stays at the BNB that went into the
+/// pair. That BNB is no longer held by this contract. The virtual reserves are the final curve reserves, so
+/// `virtualBnbReserve / virtualTokenReserve` reads as the listing price. The solvency invariant is
 /// `address(this).balance >= accruedFees + sum(realBnbReserve of curves that have not graduated)`.
+///
+/// Admin trust (Ownable2Step owner): pause/unpause createToken and buy (which also holds back graduation), and set
+/// the fee recipient, which also redirects fees that have accrued but not been claimed. The owner can't touch
+/// curve reserves, fees already paid out, or sells. Renouncing is only possible while unpaused, so a pause can
+/// never become permanent.
+///
+/// Integrators: anyone can deploy look-alike `DprkToken` contracts. Trust a token only if
+/// `isLaunchToken(token)` is true on this launchpad.
 contract DprkLaunchpad is IDprkLaunchpad, Ownable2Step, ReentrancyGuard {
     // ------------------------------------------------------------------------------------------------ constants
 
@@ -65,6 +76,9 @@ contract DprkLaunchpad is IDprkLaunchpad, Ownable2Step, ReentrancyGuard {
     uint256 public constant MAX_PAGE_SIZE = 100;
 
     uint256 private constant _BPS = 10_000;
+
+    /// @notice `renounceOwnership()` while paused would freeze creates, buys and graduations forever.
+    error RenounceWhilePaused();
 
     // ------------------------------------------------------------------------------------------------ config
 
@@ -141,9 +155,9 @@ contract DprkLaunchpad is IDprkLaunchpad, Ownable2Step, ReentrancyGuard {
         feeRecipient = feeRecipient_;
         feeBps = feeBps_;
         initialVirtualBnbReserve = initialVirtualBnbReserve_;
-        // Real BNB when the curve sells out along the k = k0 path: ceil(V0 * y0 / yEnd) - V0 (3 * V0 plus at
-        // most 1 wei). Rounding only ever grows k, so a real curve graduates with at least this much (in practice
-        // a few wei more).
+        // Real BNB when the curve sells out along the k = k0 path: ceil(V0 * y0 / yEnd) - V0, which is 3 * V0 + 1
+        // wei. Rounding only ever grows k, so a real curve sends at least this much to the pair, usually a few wei
+        // more.
         graduationBnb = Math.mulDiv(
             initialVirtualBnbReserve_, initialVirtualTokenReserve, FINAL_VIRTUAL_TOKEN_RESERVE, Math.Rounding.Ceil
         ) - initialVirtualBnbReserve_;
@@ -153,17 +167,27 @@ contract DprkLaunchpad is IDprkLaunchpad, Ownable2Step, ReentrancyGuard {
 
     // ------------------------------------------------------------------------------------------------ owner
 
-    /// @notice Owner-only. Where `claimFees()` sends protocol fees. Never touches curve reserves.
+    /// @notice Owner-only. Where `claimFees()` sends protocol fees. That includes fees that have already accrued
+    /// but not been claimed yet, so this is admin trust over the whole unclaimed fee bucket. It never touches curve
+    /// reserves.
     function setFeeRecipient(address newRecipient) external onlyOwner {
         if (newRecipient == address(0)) revert InvalidConfiguration();
         emit FeeRecipientUpdated(feeRecipient, newRecipient);
         feeRecipient = newRecipient;
     }
 
-    /// @notice Owner-only. Pausing blocks `createToken` and `buy`. Selling and fee claims keep working.
+    /// @notice Owner-only. Pausing blocks `createToken` and `buy`. Graduation only happens inside a completing buy,
+    /// so no curve can graduate while paused. Selling and fee claims keep working, so holders can always exit.
     function setPaused(bool paused_) external onlyOwner {
         paused = paused_;
         emit PausedSet(paused_);
+    }
+
+    /// @notice Owner-only, and only while unpaused. Renouncing while paused would make the pause permanent: no
+    /// creates, buys or graduations ever again. Renouncing while unpaused leaves a launchpad that nobody can pause.
+    function renounceOwnership() public override onlyOwner {
+        if (paused) revert RenounceWhilePaused();
+        super.renounceOwnership();
     }
 
     // ------------------------------------------------------------------------------------------------ actions
@@ -403,9 +427,10 @@ contract DprkLaunchpad is IDprkLaunchpad, Ownable2Step, ReentrancyGuard {
     }
 
     /// @dev Seeds the PancakeSwap V2 pair with all of this curve's real BNB (as WBNB) plus LP_SUPPLY tokens and
-    /// burns the LP. A direct `mint` credits `balance - reserve` on both sides. Donated or synced WBNB therefore
-    /// can't make it revert, and it only raises the price. The token side can't be pre-seeded (transfer rule), so
-    /// totalSupply is 0 here and this is always the pair's first mint.
+    /// burns the minted LP to 0x...dEaD. A direct `mint` credits `balance - reserve` on both sides. Donated or
+    /// synced WBNB therefore can't make it revert, and it only raises the price. The token side can't be pre-seeded
+    /// (transfer rule), so totalSupply is 0 here and this is always the pair's first mint. Later protocol-fee LP
+    /// (PancakeSwap `feeTo`) is minted by the pair, not by us, and isn't burned.
     function _graduate(address token, Curve storage curve, uint256 bnbLiquidity) private {
         curve.graduated = true;
 

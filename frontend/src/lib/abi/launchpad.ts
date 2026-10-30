@@ -1950,6 +1950,11 @@ export const dprkLaunchpadAbi = [
   },
   {
     "type": "error",
+    "name": "RenounceWhilePaused",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "SafeCastOverflowedUintDowncast",
     "inputs": [
       {

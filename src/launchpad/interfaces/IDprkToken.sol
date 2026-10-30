@@ -8,6 +8,8 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 /// mints, comes from the launchpad, goes to the launchpad, or goes to a certified (pass-holding) address. That
 /// keeps uncertified wallets (and the PancakeSwap pair) from holding curve tokens. After graduation it is a
 /// plain ERC-20 with no owner, tax, mint, or blacklist.
+/// @dev Anyone can deploy a contract with this bytecode and its own `launchpad`/`pass`. Integrators must check
+/// `IDprkLaunchpad(launchpad).isLaunchToken(token)` against the real launchpad before trusting a token.
 interface IDprkToken is IERC20Metadata {
     error TransferLocked(address from, address to);
     error OnlyLaunchpad();

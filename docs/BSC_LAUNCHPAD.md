@@ -16,7 +16,9 @@ anyone who does is certified as "not Lazarus".
 3. **Use the launchpad.** Only pass holders can create tokens or buy from a bonding curve. Anyone can sell back to a
    curve, and selling is never paused.
 4. **Graduate.** When a curve sells its whole `CURVE_SUPPLY`, the same transaction seeds a PancakeSwap V2 pair with all
-   real BNB plus `LP_SUPPLY` tokens and burns the LP tokens to `0x000000000000000000000000000000000000dEaD`.
+   real BNB plus `LP_SUPPLY` tokens and burns the minted LP tokens to `0x000000000000000000000000000000000000dEaD`.
+   Burned doesn't mean 100% locked forever: with PancakeSwap's `feeTo` set (it is on BSC), the pair later mints
+   protocol-fee LP to `feeTo` out of swap-fee growth, and that LP can be withdrawn.
 
 ## Contracts (`src/launchpad/`)
 
@@ -40,7 +42,8 @@ Changing an interface means changing the frontend too. Regenerate ABIs with `for
   `initialVirtualTokenReserve = CURVE_SUPPLY² / (CURVE_SUPPLY − LP_SUPPLY)` and
   `initialVirtualBnbReserve = V0`, an immutable constructor argument.
 - That choice of virtual token reserve makes the PancakeSwap listing price exactly equal the curve's final spot
-  price, so there is no graduation arbitrage. Real BNB raised at sell-out is `graduationBnb = V0·(S−L)/L = 3·V0`.
+  price, so there is no graduation arbitrage. Real BNB raised at sell-out is `graduationBnb ≈ V0·(S−L)/L = 3·V0`
+  (exactly `3·V0 + 1 wei` on the rounding-free path, and a few wei more in practice; see the implementation notes).
   - Chain 56: `V0 = 8 BNB`, which graduates at 24 BNB (≈120 BNB FDV at listing).
   - Chain 97: `V0 = 0.5 tBNB`, which graduates at 1.5 tBNB.
   - Chain 31337: `V0 = 1 ether`.
@@ -55,8 +58,10 @@ Changing an interface means changing the frontend too. Regenerate ABIs with `for
 ### Gate
 
 - `createToken` and `buy` revert with `NotCertified(msg.sender)` unless `pass.isCertified(msg.sender)`.
-- `createToken` and `buy` revert with `LaunchpadPaused()` while the owner has paused. `sell` and graduation are
-  never paused.
+- `createToken` and `buy` revert with `LaunchpadPaused()` while the owner has paused. Graduation only ever happens
+  inside a completing `buy`, so **pausing also blocks graduation**: no curve can graduate while paused. `sell` and
+  `claimFees()` are never paused, so holders can always exit to the curve. `renounceOwnership()` reverts
+  (`RenounceWhilePaused()`) while paused, so a pause can't become permanent.
 - `DprkToken` transfer rule before graduation: a transfer is allowed iff it is a mint, OR `from == launchpad`, OR
   `to == launchpad`, OR `pass.isCertified(to)`. Uncertified wallets and the PancakeSwap pair therefore can't receive
   curve tokens. That blocks pre-seeding the pair, which is how router-based launchpads get griefed. After
@@ -75,7 +80,8 @@ liquidity = pair.mint(DEAD)
 
 Graduation deliberately bypasses the router. Someone can pre-create the pair, donate WBNB, and `sync()` so reserves
 read `(0, x)`. That makes `router.addLiquidityETH` revert in `quote()`. A direct `mint` still succeeds, because
-`amount = balance − reserve` ignores the donated WBNB. Required tests: pair pre-created, WBNB donated plus `sync`,
+`amount = balance − reserve`: a synced donation is ignored, and an unsynced one is credited to the burned first LP
+position. Either way the donation only raises the listing price. Required tests: pair pre-created, WBNB donated plus `sync`,
 then graduation succeeds and the pool price stays at or above the curve price.
 
 ### Invariants (fuzz/invariant tests must cover)
@@ -99,16 +105,23 @@ these factories and WBNB. They're used only for the frontend's "Trade on Pancake
 
 ### Deployment script (`script/DeployDprkFun.s.sol`)
 
-- Env: `KIM_JONG_UN_ADDRESS` (optional; reuse an existing registry, otherwise deploy one), `FEE_RECIPIENT` (default:
-  deployer), `FEE_BPS` (default 100), `INITIAL_VIRTUAL_BNB` (default per chain, as above), `PASS_NAME`,
-  `PASS_SYMBOL`.
-- Chains 56 and 97 use the addresses above. Any other chain (local anvil) deploys `MockWBNB` and a minimal
-  PancakeSwap-V2-compatible mock factory/pair.
+- Env: `KIM_JONG_UN_ADDRESS` (optional; reuse an existing registry, otherwise deploy one), `OWNER`,
+  `FEE_RECIPIENT`, `FEE_BPS` (default 100), `INITIAL_VIRTUAL_BNB` (default per chain, as above), `PANCAKE_FACTORY`,
+  `WBNB`, `PASS_NAME`, `PASS_SYMBOL`, `DEPLOYMENTS_FILE`.
+- Rules by chain. Every rule is checked before anything is broadcast:
+
+  | Chain | DEX | `OWNER` / `FEE_RECIPIENT` | `INITIAL_VIRTUAL_BNB` |
+  | --- | --- | --- | --- |
+  | 56 | the verified addresses above (`PANCAKE_FACTORY`/`WBNB` may only repeat them) | **required** | [1, 100] BNB, default 8 |
+  | 97 | the verified addresses above (same rule) | optional, default deployer | [0.01, 100] BNB, default 0.5 |
+  | 31337 | `MockWBNB` + mock PancakeSwap V2 factory, unless both `PANCAKE_FACTORY` and `WBNB` are given | optional, default deployer | contract bounds, default 1 |
+  | any other | `PANCAKE_FACTORY` and `WBNB` **required**, both must have code | **required** | contract bounds, default 1 |
+
+  Mocks are only ever deployed on 31337.
 - Writes `deployments/<chainId>.json`:
-  `{ chainId, kimJongUn, pass, launchpad, pancakeFactory, wbnb, deployBlock }`.
-- Prints the matching `VITE_*` lines for the frontend.
-- Also accepts `OWNER` (launchpad owner, default: deployer) and `DEPLOYMENTS_FILE`. For a fork rehearsal, use e.g.
+  `{ chainId, kimJongUn, pass, launchpad, pancakeFactory, wbnb, deployBlock }`. For a fork rehearsal, use e.g.
   `DEPLOYMENTS_FILE=deployments/56-fork.json` (gitignored), so fork addresses never land in `deployments/56.json`.
+- Prints the matching `VITE_*` lines for the frontend.
 
 ### Implementation notes (as built)
 
@@ -131,8 +144,8 @@ graduates with at least that. Rounding adds a few wei per trade, so expect about
 exactly, even though `y0` is rounded down.
 
 **Post-graduation `TokenState`** is frozen at its final values: `graduated = true`, `pair` set,
-`realTokenReserve = 0`, `realBnbReserve` = the BNB that went into the pool, and the virtual reserves are the final
-curve reserves. So `virtualBnbReserve / virtualTokenReserve` still reads as the listing price, and
+`realTokenReserve = 0`, `realBnbReserve` frozen at the BNB that went into the pair (no longer held by the
+launchpad), and the virtual reserves are the final curve reserves. So `virtualBnbReserve / virtualTokenReserve` still reads as the listing price, and
 `realBnbReserve / graduationBnb()` reads as about 100% raised. That BNB is no longer held by the launchpad, so the
 solvency invariant sums `realBnbReserve` over curves that haven't graduated.
 
@@ -152,8 +165,15 @@ solvency invariant sums `realBnbReserve` over curves that haven't graduated.
 `createToken` emits `TokenCreated` before the `Trade` for its initial buy.
 
 **Admin (Ownable2Step).** `setFeeRecipient(address)` (non-zero) and `setPaused(bool)` are owner-only, along with
-OpenZeppelin's `transferOwnership`/`acceptOwnership`/`renounceOwnership`. The owner can't touch reserves, fees,
-curves, or sells.
+OpenZeppelin's `transferOwnership`/`acceptOwnership`. `renounceOwnership()` reverts `RenounceWhilePaused()` while
+paused; renouncing while unpaused leaves a launchpad nobody can pause. Admin trust, exactly:
+- Pausing stops creates, buys and therefore graduations, for as long as it lasts. Sells and fee claims continue.
+- `setFeeRecipient` also redirects fees that have accrued but not been claimed, so the owner controls the whole
+  unclaimed fee bucket. Anyone can call `claimFees()` at any time to pay out to the current recipient.
+- The owner can't touch curve reserves, the fee rate, sells, or tokens.
+
+**Integrators.** Anyone can deploy a look-alike `DprkToken` (same bytecode, its own `launchpad`/`pass`). Trust a
+token only if `isLaunchToken(token)` is true on the real launchpad. Don't rely on `token.launchpad()` alone.
 
 **Other behaviour.**
 - The launchpad has no `receive()`, so plain BNB transfers to it revert.
@@ -186,9 +206,9 @@ precompiles.
 | `sell` | ~67,000 to 79,000 (plus a one-off `approve`, 46,274) |
 | graduating `buy` (creates the pair / pair pre-created) | 3,562,919 / 365,658 |
 | `claimFees` | ~37,000 to 49,000 |
-| Deploy `DprkPass` / `DprkLaunchpad` | 2,920,294 / 4,090,852 |
+| Deploy `DprkPass` / `DprkLaunchpad` | 2,920,294 / 4,103,676 |
 
-Deployed sizes (default profile): `DprkLaunchpad` 18,355 B, `DprkPass` 13,051 B, `DprkToken` 3,533 B, all under
+Deployed sizes (default profile): `DprkLaunchpad` 18,416 B, `DprkPass` 13,051 B, `DprkToken` 3,533 B, all under
 24,576 B.
 
 ## Frontend (`frontend/`, dprk.fun)
@@ -224,8 +244,14 @@ must treat metadata as hostile: parse defensively, allow only `https:`/`ipfs:` U
 ## Local development
 
 ```sh
-anvil                                   # or: anvil --fork-url https://bsc-dataseed.bnbchain.org (real PancakeSwap, chain 56)
+anvil                                   # chain 31337: mocks, OWNER/FEE_RECIPIENT default to the deployer
 forge script script/DeployDprkFun.s.sol --rpc-url http://127.0.0.1:8545 --broadcast --private-key <anvil key #0>
+
+# or a BSC mainnet fork (real PancakeSwap, chain 56): OWNER and FEE_RECIPIENT are required
+anvil --fork-url https://bsc-dataseed.bnbchain.org
+OWNER=<addr> FEE_RECIPIENT=<addr> DEPLOYMENTS_FILE=deployments/56-fork.json \
+  forge script script/DeployDprkFun.s.sol --rpc-url http://127.0.0.1:8545 --broadcast --private-key <anvil key #0>
+
 node script/export-abis.mjs
 cd frontend && cp .env.example .env.local   # fill in the VITE_* lines printed by the deploy script
 bun install && bun run dev
