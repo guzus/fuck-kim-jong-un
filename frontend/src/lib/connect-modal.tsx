@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAccountEffect, useConnect, useConnectors } from "wagmi";
 
 import {
@@ -16,22 +8,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-
-type ConnectModalContextValue = {
-  open: boolean;
-  openConnectModal: () => void;
-  closeConnectModal: () => void;
-};
-
-const ConnectModalContext = createContext<ConnectModalContextValue | null>(null);
-
-export function useConnectModal(): ConnectModalContextValue {
-  const ctx = useContext(ConnectModalContext);
-  if (!ctx) {
-    throw new Error("useConnectModal must be used within <ConnectModalProvider>");
-  }
-  return ctx;
-}
+import { ConnectModalContext } from "@/lib/connect-modal-context";
+import { launchpadConfig } from "@/lib/launchpad/config";
 
 export function ConnectModalProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -71,14 +49,14 @@ function ConnectDialog({
     },
   });
 
+  // Clear a stale error when the dialog closes. pendingId needs no reset: it only counts while isPending.
   useEffect(() => {
-    if (!open) {
-      reset();
-      setPendingId(null);
-    }
+    if (!open) reset();
   }, [open, reset]);
 
-  const visible = connectors.filter((c) => c.id !== "injected" || connectors.length === 1);
+  // The e2e mock connector (only present in VITE_E2E_MOCK_WALLET builds) doesn't count as a browser wallet.
+  const browserWallets = connectors.filter((c) => c.type !== "mock");
+  const visible = connectors.filter((c) => c.id !== "injected" || browserWallets.length === 1);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -96,7 +74,9 @@ function ConnectDialog({
             <EmptyState />
           ) : (
             visible.map((c) => {
-              const busy = pendingId === c.id;
+              const busy = isPending && pendingId === c.id;
+              // `import.meta.env` check keeps this label (and branch) out of normal builds entirely.
+              const isMock = import.meta.env.VITE_E2E_MOCK_WALLET === "1" && c.type === "mock";
               return (
                 <button
                   key={c.uid}
@@ -104,12 +84,15 @@ function ConnectDialog({
                   disabled={isPending}
                   onClick={() => {
                     setPendingId(c.id);
-                    connect({ connector: c });
+                    // The mock wallet starts on the launchpad chain; real wallets stay where they are.
+                    connect(isMock ? { connector: c, chainId: launchpadConfig.chainId } : { connector: c });
                   }}
                   className="group flex items-center gap-3 rounded-lg border border-border bg-background px-3 py-2.5 text-left transition-colors hover:bg-muted disabled:opacity-50 disabled:pointer-events-none"
                 >
                   <WalletIcon connector={c} />
-                  <span className="flex-1 text-sm font-medium">{c.name}</span>
+                  <span className="flex-1 text-sm font-medium">
+                    {isMock ? "E2E mock wallet (anvil #0)" : c.name}
+                  </span>
                   {busy ? (
                     <span className="text-xs text-muted-foreground">Connecting…</span>
                   ) : c.id === "injected" ? (

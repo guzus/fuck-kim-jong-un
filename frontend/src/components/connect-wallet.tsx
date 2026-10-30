@@ -1,23 +1,34 @@
-import { useDisconnect, useConnection, useChainId, useSwitchChain } from "wagmi";
+import type { Chain } from "viem";
+import { useDisconnect, useConnection, useSwitchChain } from "wagmi";
 import { mainnet } from "wagmi/chains";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useConnectModal } from "@/lib/connect-modal";
+import { useConnectModal } from "@/lib/connect-modal-context";
 
 function shortenAddress(addr: string) {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
 
-export function ConnectWallet() {
-  const { address, status } = useConnection();
-  const chainId = useChainId();
+/**
+ * Connect / wrong-network / disconnect control. `targetChain` is the chain the current page writes to:
+ * Ethereum mainnet for the Lazarus Checker (the default), the launchpad chain under /launchpad.
+ */
+export function ConnectWallet({
+  targetChain = mainnet,
+  targetLabel = "Mainnet",
+}: {
+  targetChain?: Chain;
+  targetLabel?: string;
+}) {
+  // `chainId` from the connection is the wallet's real chain, even one the config doesn't know.
+  const { address, status, chainId } = useConnection();
   const { disconnect } = useDisconnect();
   const { switchChain, isPending: isSwitching } = useSwitchChain();
   const { openConnectModal } = useConnectModal();
 
   if (status === "connected" && address) {
-    const wrongChain = chainId !== mainnet.id;
+    const wrongChain = chainId !== targetChain.id;
     return (
       <div className="flex items-center gap-2 flex-wrap justify-end">
         {wrongChain ? (
@@ -25,9 +36,9 @@ export function ConnectWallet() {
             variant="destructive"
             size="sm"
             disabled={isSwitching}
-            onClick={() => switchChain({ chainId: mainnet.id })}
+            onClick={() => switchChain({ chainId: targetChain.id })}
           >
-            {isSwitching ? "Switching…" : "Switch to Mainnet"}
+            {isSwitching ? "Switching…" : `Switch to ${targetLabel}`}
           </Button>
         ) : (
           <Badge variant="secondary" className="font-mono">

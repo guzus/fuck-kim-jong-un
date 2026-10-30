@@ -5,8 +5,8 @@
 [build.environment]
   NODE_VERSION = "22"
 
-# SPA fallback — every unknown path serves index.html so client-side
-# routing (if ever added) works from cold links.
+# SPA fallback: every unknown path serves index.html so the client-side routes
+# (/launchpad, /launchpad/create, /launchpad/token/:address) work from cold links.
 [[redirects]]
   from = "/*"
   to = "/index.html"
@@ -23,6 +23,17 @@
   for = "/index.html"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
+
+# Security headers on every path. The SPA rewrite serves index.html for /launchpad/..., which the
+# /index.html rule above doesn't match, so these live here (once, so values never get merged twice).
+# The launchpad renders creator-supplied token metadata; the CSP is a second line of defence behind the
+# React escaping and URL allowlists: no inline, injected or third-party script can run, nothing can frame
+# the site, and <base>/<form> can't be repointed. img-src allows https: (token logos) and data: (the
+# on-chain pass SVG, wallet icons); connect-src allows any https/wss RPC plus a local node for dev.
+[[headers]]
+  for = "/*"
+  [headers.values]
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https: wss: http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
