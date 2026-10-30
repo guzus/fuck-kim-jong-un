@@ -10,5 +10,6 @@
 # Foundry deploy logs
 /.deploy/
 
-# Local-chain deployments
+# Local-chain and fork-rehearsal deployments (DEPLOYMENTS_FILE=deployments/56-fork.json)
 /deployments/31337.json
+/deployments/*-fork.json
