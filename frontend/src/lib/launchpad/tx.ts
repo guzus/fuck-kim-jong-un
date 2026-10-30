@@ -1,4 +1,4 @@
-import type { Hash, TransactionReceipt } from "viem";
+import type { Hash, ReplacementReason, TransactionReceipt } from "viem";
 import { getBlock, getPublicClient } from "wagmi/actions";
 
 import { launchpadConfig } from "@/lib/launchpad/config";
@@ -42,19 +42,31 @@ export class TxRevertedError extends Error {
   }
 }
 
-/** Waits for a launchpad-chain transaction and throws if it reverted. */
+/** Waits for a launchpad-chain transaction and throws if it reverted or the wallet replaced it. */
 export async function waitForSuccess(hash: Hash): Promise<TransactionReceipt> {
-  // viem's waiter, not wagmi's: on a revert, wagmi re-runs the call against the *latest* block and throws
-  // whatever that returns. That describes the chain after the fact (AlreadyGraduated once another buy
-  // finished the curve, "unknown reason", or an empty message when the re-run succeeds), not this tx.
+  // viem's waiter, not wagmi's: on a revert, wagmi re-runs the call on top of the block the transaction was
+  // mined in and throws whatever that returns. That describes the chain after the fact (AlreadyGraduated
+  // once another buy finished the curve, "unknown reason", or an empty message when the re-run succeeds).
   const client = getPublicClient(wagmiConfig, { chainId: launchpadConfig.chainId });
   if (!client) throw new Error("No client for the launchpad chain");
-  const receipt = await client.waitForTransactionReceipt({ hash, timeout: 0 });
+  const replaced: { reason?: ReplacementReason } = {};
+  const receipt = await client.waitForTransactionReceipt({
+    hash,
+    timeout: 0,
+    onReplaced: ({ reason }) => {
+      replaced.reason = reason;
+    },
+  });
+  // A speed-up ("repriced") is the same call. A cancel (a 0-value send to self) or any other replacement
+  // succeeds on its own, so its receipt says nothing about what the user asked for.
+  if (replaced.reason === "cancelled") throw new Error("The transaction was cancelled in your wallet.");
+  if (replaced.reason === "replaced") throw new Error("Your wallet replaced the transaction with a different one.");
   if (receipt.status !== "success") {
     // Running out of gas burns the whole limit except the 1/64 each outer call keeps back (EIP-150), so
     // ~97% even two calls deep (launchpad -> factory -> CREATE2); a revert in the contract logic uses less.
-    const tx = await client.getTransaction({ hash }).catch(() => undefined);
-    throw new TxRevertedError(hash, tx !== undefined && receipt.gasUsed * 100n >= tx.gas * 95n);
+    const mined = receipt.transactionHash;
+    const tx = await client.getTransaction({ hash: mined }).catch(() => undefined);
+    throw new TxRevertedError(mined, tx !== undefined && receipt.gasUsed * 100n >= tx.gas * 95n);
   }
   return receipt;
 }
