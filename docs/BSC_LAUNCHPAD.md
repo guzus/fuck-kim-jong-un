@@ -186,7 +186,7 @@ precompiles.
 | `sell` | ~67,000 to 79,000 (plus a one-off `approve`, 46,274) |
 | graduating `buy` (creates the pair / pair pre-created) | 3,562,919 / 365,658 |
 | `claimFees` | ~37,000 to 49,000 |
-| Deploy `DprkPass` / `DprkLaunchpad` | 2,754,329 / 4,090,840 |
+| Deploy `DprkPass` / `DprkLaunchpad` | 2,920,294 / 4,090,852 |
 
 Deployed sizes (default profile): `DprkLaunchpad` 18,355 B, `DprkPass` 13,051 B, `DprkToken` 3,533 B, all under
 24,576 B.
