@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
 import { toast } from "sonner";
 import { isAddressEqual, parseEventLogs } from "viem";
-import { useBalance, useReadContract } from "wagmi";
+import { useBalance, useGasPrice, useReadContract } from "wagmi";
 import { readContract, simulateContract, writeContract } from "wagmi/actions";
 
 import { Link } from "@/components/link";
@@ -193,14 +193,24 @@ export function CreateTokenForm() {
 
   const hasFieldErrors = Object.values(errors).some(Boolean) || buy.status === "invalid";
   const missingRequired = !fields.name.trim() || !fields.symbol.trim();
-  const overBalance = balance.data !== undefined && buyValue > balance.data.value;
+  // Buying the whole curve goes out with CREATE_AND_GRADUATE_GAS (see submit), and the wallet wants
+  // value + limit × gas price up front, so count that here and explain it instead of the wallet's error.
+  const gasPrice = useGasPrice({ chainId, query: { enabled: buyValue > 0n, refetchInterval: 30_000 } });
+  const takesWholeCurve =
+    quoteIsCurrent && ((quotedRefund ?? 0n) > 0n || (constants !== undefined && quotedTokens === constants.curveSupply));
+  const gasReserve = takesWholeCurve && gasPrice.data !== undefined ? CREATE_AND_GRADUATE_GAS * gasPrice.data : 0n;
+  const overBalance = balance.data !== undefined && buyValue + gasReserve > balance.data.value;
 
   let blocker: string | undefined;
   if (gate.paused) blocker = "The launchpad is paused. Launching is off for now.";
   else if (gate.canTrade === false) blocker = "Pass holders only. Insult Kim and claim your pass first.";
   else if (missingRequired) blocker = "Name and symbol are required.";
   else if (hasFieldErrors) blocker = "Fix the highlighted fields.";
-  else if (overBalance) blocker = `Not enough ${unit} for the initial buy.`;
+  else if (overBalance)
+    blocker =
+      gasReserve > 0n
+        ? `Not enough ${unit} for the initial buy plus up to ${formatAmount(gasReserve)} ${unit} of gas: buying the whole curve graduates it in the same transaction.`
+        : `Not enough ${unit} for the initial buy.`;
   else if (buyValue > 0n && !quoteIsCurrent) blocker = quote.isError ? describeError(quote.error) : "Fetching quote…";
 
   async function submit() {

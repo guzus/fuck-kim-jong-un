@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { isAddressEqual, parseEventLogs, zeroAddress, type Address, type TransactionReceipt } from "viem";
-import { useBalance, useReadContract } from "wagmi";
+import { useBalance, useGasPrice, useReadContract } from "wagmi";
 import { readContract, simulateContract, writeContract } from "wagmi/actions";
 
 import { Link } from "@/components/link";
@@ -125,6 +125,16 @@ export function TradePanel({
   const [sellBnbOut, sellFee] = side === "sell" && quoteIsCurrent ? (sellQuote.data ?? []) : [];
   const quotedOut = side === "buy" ? buyTokensOut : sellBnbOut;
 
+  // A buy that may finish the curve goes out with GRADUATING_BUY_GAS (see onBuy), and the wallet wants
+  // value + limit × gas price up front, so count that here and explain it instead of the wallet's error.
+  const gasPrice = useGasPrice({ chainId, query: { enabled: side === "buy" && !graduated, refetchInterval: 30_000 } });
+  const gasReserve =
+    buyTokensOut !== undefined &&
+    gasPrice.data !== undefined &&
+    mayCompleteCurve(info.state, (buyAccepted ?? 0n) - (buyFee ?? 0n), applySlippage(buyTokensOut, slippageBps))
+      ? GRADUATING_BUY_GAS * gasPrice.data
+      : 0n;
+
   const switchSide = (next: Side) => {
     setSide(next);
     setAmountText("");
@@ -140,8 +150,14 @@ export function TradePanel({
     blocker = { label: "Buying paused", detail: "The owner paused the launchpad. Selling still works." };
   else if (parsed.status === "invalid") blocker = { label: "Invalid amount", detail: parsed.message };
   else if (amount === 0n) blocker = { label: "Enter an amount" };
-  else if (side === "buy" && bnbBalance.data && amount > bnbBalance.data.value)
-    blocker = { label: `Not enough ${unit}` };
+  else if (side === "buy" && bnbBalance.data && amount + gasReserve > bnbBalance.data.value)
+    blocker = {
+      label: `Not enough ${unit}`,
+      detail:
+        gasReserve > 0n
+          ? `This buy may finish the curve, so it goes out with a higher gas limit: keep up to ${formatAmount(gasReserve)} ${unit} on top for gas.`
+          : undefined,
+    };
   else if (side === "sell" && tokenBalance.data !== undefined && amount > tokenBalance.data)
     blocker = { label: `Not enough ${symbol}` };
   else if (activeQuote.isError) blocker = { label: "No quote", detail: describeError(activeQuote.error) };
