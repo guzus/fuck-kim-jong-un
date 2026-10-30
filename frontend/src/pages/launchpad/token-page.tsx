@@ -170,12 +170,17 @@ function TokenView({ info }: { info: TokenInfo }) {
 
         <section className="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {/* After graduation the curve's reserves are frozen: they price the PancakeSwap listing, not today. */}
             <Stat
-              label="Price"
+              label={state.graduated ? "Listing price" : "Price"}
               value={price === undefined ? "—" : `${formatAmount(price)}`}
               sub={`${unit} per ${symbol}`}
             />
-            <Stat label="Market cap" value={mcap === undefined ? "…" : `${formatAmount(mcap)} ${unit}`} sub="fully diluted" />
+            <Stat
+              label="Market cap"
+              value={mcap === undefined ? "…" : `${formatAmount(mcap)} ${unit}`}
+              sub={state.graduated ? "at listing" : "fully diluted"}
+            />
             <Stat
               label="Raised"
               value={`${formatAmount(raised)} ${unit}`}
@@ -208,7 +213,7 @@ function TokenView({ info }: { info: TokenInfo }) {
 
       <aside className="flex flex-col gap-4 lg:sticky lg:top-6 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start">
         <TradePanel info={info} symbol={symbol} feeBps={constants?.feeBps} />
-        <WalletBalances token={info.token} symbol={symbol} priceE18={price} />
+        <WalletBalances token={info.token} symbol={symbol} priceE18={state.graduated ? undefined : price} />
       </aside>
 
       <div className="min-w-0 lg:col-start-1 lg:row-start-2">
