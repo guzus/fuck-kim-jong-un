@@ -25,6 +25,7 @@ import {
   GRADUATING_BUY_GAS,
   PriceMovedError,
   submitDeadline,
+  TxRevertedError,
   waitForSuccess,
 } from "@/lib/launchpad/tx";
 import { wagmiConfig } from "@/lib/wagmi";
@@ -266,6 +267,8 @@ export function TradePanel({
       const message = error instanceof PriceMovedError ? error.message : describeError(error);
       setLastError(message);
       toast.error(message);
+      // A mined revert still changed things (gas spent, and usually someone else's trade moved the curve).
+      if (error instanceof TxRevertedError) void queryClient.invalidateQueries();
     } finally {
       setBusy(null);
     }

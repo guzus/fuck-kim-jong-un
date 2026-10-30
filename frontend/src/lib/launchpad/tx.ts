@@ -1,5 +1,5 @@
 import type { Hash, TransactionReceipt } from "viem";
-import { getBlock, waitForTransactionReceipt } from "wagmi/actions";
+import { getBlock, getPublicClient } from "wagmi/actions";
 
 import { launchpadConfig } from "@/lib/launchpad/config";
 import { wagmiConfig } from "@/lib/wagmi";
@@ -36,19 +36,26 @@ export async function submitDeadline(minutes: number): Promise<bigint> {
 
 export class TxRevertedError extends Error {
   readonly hash: Hash;
-  constructor(hash: Hash) {
-    super("The transaction was mined but reverted.");
+  constructor(hash: Hash, outOfGas = false) {
+    super(outOfGas ? "The transaction ran out of gas and reverted." : "The transaction was mined but reverted.");
     this.hash = hash;
   }
 }
 
 /** Waits for a launchpad-chain transaction and throws if it reverted. */
 export async function waitForSuccess(hash: Hash): Promise<TransactionReceipt> {
-  const receipt = await waitForTransactionReceipt(wagmiConfig, {
-    hash,
-    chainId: launchpadConfig.chainId,
-  });
-  if (receipt.status !== "success") throw new TxRevertedError(hash);
+  // viem's waiter, not wagmi's: on a revert, wagmi re-runs the call against the *latest* block and throws
+  // whatever that returns. That describes the chain after the fact (AlreadyGraduated once another buy
+  // finished the curve, "unknown reason", or an empty message when the re-run succeeds), not this tx.
+  const client = getPublicClient(wagmiConfig, { chainId: launchpadConfig.chainId });
+  if (!client) throw new Error("No client for the launchpad chain");
+  const receipt = await client.waitForTransactionReceipt({ hash, timeout: 0 });
+  if (receipt.status !== "success") {
+    // Running out of gas burns the whole limit except the 1/64 each outer call keeps back (EIP-150), so
+    // ~97% even two calls deep (launchpad -> factory -> CREATE2); a revert in the contract logic uses less.
+    const tx = await client.getTransaction({ hash }).catch(() => undefined);
+    throw new TxRevertedError(hash, tx !== undefined && receipt.gasUsed * 100n >= tx.gas * 95n);
+  }
   return receipt;
 }
 
