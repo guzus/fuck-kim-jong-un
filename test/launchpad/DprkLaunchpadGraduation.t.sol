@@ -233,9 +233,8 @@ contract DprkLaunchpadGraduationTest is LaunchpadTestBase {
         vm.prank(bob);
         DprkToken(token).transfer(address(launchpad), bought / 4);
         _buy(carol, token, _grossToComplete(token));
-        _assertGraduated(token, _state(token).realBnbReserve);
         // Exactly LP_SUPPLY went to the pair; the donation stays (effectively burned) in the launchpad.
-        assertEq(DprkToken(token).balanceOf(address(launchpad)), bought / 4);
+        _assertGraduated(token, _state(token).realBnbReserve, bought / 4);
     }
 
     function test_grief_feeToOnMintFeePath() public {
@@ -311,6 +310,12 @@ contract DprkLaunchpadGraduationTest is LaunchpadTestBase {
     // ------------------------------------------------------------------------------------------- helpers
 
     function _assertGraduated(address token, uint256 bnbLiquidity) internal view {
+        _assertGraduated(token, bnbLiquidity, 0);
+    }
+
+    /// @dev Checks the state right after graduation. `donatedToLaunchpad` is the number of tokens sent straight to
+    /// the launchpad (not sold). They are the only tokens it may still hold.
+    function _assertGraduated(address token, uint256 bnbLiquidity, uint256 donatedToLaunchpad) internal view {
         IDprkLaunchpad.TokenState memory s = _state(token);
         assertTrue(s.graduated);
         assertEq(s.realTokenReserve, 0);
@@ -322,13 +327,15 @@ contract DprkLaunchpadGraduationTest is LaunchpadTestBase {
 
         address pair = s.pair;
         assertEq(pair, factory.getPair(token, address(wbnb)));
-        assertGe(DprkToken(token).balanceOf(pair), L);
-        assertGe(wbnb.balanceOf(pair), bnbLiquidity);
+        assertEq(DprkToken(token).balanceOf(pair), L); // nothing could reach the pair before graduation
+        assertGe(wbnb.balanceOf(pair), bnbLiquidity); // plus any donations
         uint256 burned = IPancakeV2Pair(pair).balanceOf(DEAD);
         assertGt(burned, 0);
         assertEq(IPancakeV2Pair(pair).balanceOf(address(0)), 1000);
+        assertEq(IPancakeV2Pair(pair).totalSupply(), burned + 1000); // all LP minted at graduation is burned
         assertEq(IPancakeV2Pair(pair).balanceOf(address(launchpad)), 0);
-        assertEq(DprkToken(token).balanceOf(address(launchpad)) >= 0, true);
+        // No curve tokens left behind: the buyer got the remainder and the pair got LP_SUPPLY.
+        assertEq(DprkToken(token).balanceOf(address(launchpad)), donatedToLaunchpad);
         _assertPoolPriceAtLeastCurve(token);
     }
 

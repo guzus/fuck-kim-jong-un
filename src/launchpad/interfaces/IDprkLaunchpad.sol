@@ -4,8 +4,11 @@ pragma solidity ^0.8.24;
 /// @title DPRK.FUN launchpad
 /// @notice Single-contract bonding-curve launchpad for BNB Chain. Only certified addresses (DPRK.FUN pass holders)
 /// can create tokens or buy from a curve. Selling back to the curve is always open, and pausing never blocks it.
-/// When a curve sells its whole CURVE_SUPPLY it graduates in the same transaction. Graduation sends all real BNB
-/// plus LP_SUPPLY tokens to the PancakeSwap V2 pair and burns the LP tokens to 0x...dEaD.
+/// When a curve sells its whole CURVE_SUPPLY it graduates in the same transaction. Graduation only ever happens
+/// inside that completing buy, so it waits while buys are paused. Graduation sends all real BNB plus LP_SUPPLY tokens
+/// to the PancakeSwap V2 pair and burns the minted LP tokens to 0x...dEaD. (PancakeSwap's `feeTo` can still mint
+/// protocol-fee LP later, so not 100% of the pool is locked forever.)
+/// @dev Anyone can deploy look-alike DprkToken contracts. Integrators must check `isLaunchToken(token)`.
 interface IDprkLaunchpad {
     struct TokenState {
         address creator;
@@ -15,7 +18,8 @@ interface IDprkLaunchpad {
         address pair;
         uint256 virtualBnbReserve;
         uint256 virtualTokenReserve;
-        /// @dev BNB held for this curve, excluding protocol fees.
+        /// @dev BNB held for this curve, excluding protocol fees. After graduation it is frozen at the amount that went
+        /// into the pair, and the launchpad no longer holds it.
         uint256 realBnbReserve;
         /// @dev Tokens still purchasable from the curve, excluding the LP allocation.
         uint256 realTokenReserve;
@@ -84,7 +88,8 @@ interface IDprkLaunchpad {
     function initialVirtualBnbReserve() external view returns (uint256);
     function initialVirtualTokenReserve() external view returns (uint256);
 
-    /// @notice Real BNB a curve holds (fees excluded) when it sells out and graduates.
+    /// @notice Real BNB (fees excluded) a curve sends to the pair when it sells out: about 3 * V0. Exactly, this is
+    /// the k = k0 value ceil(V0 * y0 / yEnd) - V0 = 3 * V0 + 1 wei. Rounding during trading adds a few more wei.
     function graduationBnb() external view returns (uint256);
 
     // ---------------------------------------------------------------- actions
@@ -141,6 +146,6 @@ interface IDprkLaunchpad {
     /// @notice Creation order: index 0 is the first token ever created.
     function tokenAt(uint256 index) external view returns (address);
 
-    /// @notice Share of CURVE_SUPPLY sold, in basis points (10_000 = graduated or ready to graduate).
+    /// @notice Share of CURVE_SUPPLY sold, in basis points, rounded down. 10_000 only once graduated.
     function progressBps(address token) external view returns (uint256);
 }

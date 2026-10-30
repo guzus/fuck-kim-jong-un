@@ -121,13 +121,19 @@ BSC_RPC_URL=https://bsc-dataseed.bnbchain.org \
   forge test --match-path 'test/launchpad/*Fork*' -vv            # real PancakeSwap V2 + WBNB on a mainnet fork
 FOUNDRY_PROFILE=deep forge test --match-path 'test/launchpad/*'  # long fuzz/invariant campaign
 
-anvil   # or: anvil --fork-url https://bsc-dataseed.bnbchain.org
+anvil
 forge script script/DeployDprkFun.s.sol --rpc-url http://127.0.0.1:8545 --broadcast --private-key <anvil key #0>
+# BSC mainnet fork rehearsal (chain 56: OWNER and FEE_RECIPIENT are required)
+anvil --fork-url https://bsc-dataseed.bnbchain.org
+OWNER=<addr> FEE_RECIPIENT=<addr> DEPLOYMENTS_FILE=deployments/56-fork.json \
+  forge script script/DeployDprkFun.s.sol --rpc-url http://127.0.0.1:8545 --broadcast --private-key <anvil key #0>
 node script/export-abis.mjs                                      # frontend/src/lib/abi/launchpad.ts
 ```
 
-`DeployDprkFun` uses the real PancakeSwap V2 factory and WBNB on chains 56 and 97, and deploys mocks on any other
-chain. It writes `deployments/<chainId>.json` and prints the `VITE_*` lines for `frontend/.env.local`.
+`DeployDprkFun` uses the real PancakeSwap V2 factory and WBNB on chains 56 and 97, deploys mocks only on 31337,
+and needs `PANCAKE_FACTORY` and `WBNB` on any other chain. On chain 56 (and other non-test chains), `OWNER` and
+`FEE_RECIPIENT` must be set explicitly. It writes `deployments/<chainId>.json` and prints the `VITE_*` lines for
+`frontend/.env.local`.
 
 ## Deploy
 
